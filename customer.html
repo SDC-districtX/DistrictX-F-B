@@ -1022,29 +1022,36 @@ const App = {
     btn.disabled=true; btn.textContent='Placing Order…';
     const db=window.$db, d=today();
     try{
-      // Atomic counter
-      const cRef=window.$ref(db,'counters/'+d+'/n');
-      const cSnap=await window.$get(cRef);
-      const n=(cSnap.val()||0)+1;
-      await window.$set(cRef,n);
-      const orderNum='DX'+String(n).padStart(3,'0');
+      // Use timestamp-based order number to avoid counter race condition
+      const orderNum='DX'+String(Date.now()).slice(-5);
       const r=RESTAURANTS.find(x=>x.id===this.cartRestId);
+      const notes=$('co-notes').value.trim();
+      // Firebase rejects null values — only include fields with real values
       const order={
-        orderNum, tableNum:this.tableNum, sessionId:this.sessionId,
-        restaurantId:this.cartRestId, restaurantName:r.name,
-        items:items.map(i=>({id:i.id,name:i.name,price:i.price,qty:i.qty})),
-        notes:$('co-notes').value.trim(),
-        total:this.cartTotal(),
-        status:'pending', date:d, createdAt:Date.now(),
-        waiterId:null, waiterName:null, waiterPhone:null, deliveredAt:null,
+        orderNum,
+        tableNum: this.tableNum||0,
+        sessionId: this.sessionId,
+        restaurantId: this.cartRestId,
+        restaurantName: r.name,
+        items: items.map(i=>({id:i.id, name:i.name, price:i.price, qty:i.qty})),
+        total: this.cartTotal(),
+        status: 'pending',
+        date: d,
+        createdAt: Date.now(),
       };
+      // Only add notes if not empty
+      if(notes) order.notes = notes;
+
       await window.$push(window.$ref(db,'orders/'+d), order);
       this.cart={}; this.cartRestId=null; this.refreshCartBar();
       this.renderMenuItems(this.currentRestId);
       this.closeCheckout();
       toast('✅ Order '+orderNum+' placed!');
       this.switchTab('orders');
-    } catch(e){ console.error(e); toast('❌ Failed. Please try again.'); }
+    } catch(e){
+      console.error('Order failed:', e.code, e.message);
+      toast('❌ Failed: '+(e.message||'Please try again.'));
+    }
     finally{ btn.disabled=false; btn.textContent='Place Order'; }
   },
 
